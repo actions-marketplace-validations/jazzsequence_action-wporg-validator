@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # Covers workflow `uses:` refs and the composite action's own steps (action.yml at the root).
+  - package-ecosystem: github-actions
+    directories:
+      - /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
