@@ -1,4 +1,4 @@
-# action-wporg-validator
+# WP.org Plugin Validator Action
 
 Run the [WordPress.org Plugin Check](https://wordpress.org/plugins/plugin-check/) in GitHub Actions **without Node or WP Playground**.
 
