@@ -11,8 +11,8 @@ jobs:
   plugin-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jazzsequence/action-wporg-validator@v1
+      - uses: actions/checkout@v7
+      - uses: jazzsequence/action-wporg-validator@0.0.0
         with:
           slug: my-plugin
 ```
