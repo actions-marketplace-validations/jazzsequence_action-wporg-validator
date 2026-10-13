@@ -1,5 +1,9 @@
 # WP.org Plugin Validator Action
 
+![GitHub Release](https://img.shields.io/github/v/release/jazzsequence/action-wporg-validator)
+[![Test](https://github.com/jazzsequence/action-wporg-validator/actions/workflows/test.yml/badge.svg)](https://github.com/jazzsequence/action-wporg-validator/actions/workflows/test.yml)
+![GitHub License](https://img.shields.io/github/license/jazzsequence/action-wporg-validator)
+
 Run the [WordPress.org Plugin Check](https://wordpress.org/plugins/plugin-check/) in GitHub Actions **without Node or WP Playground**.
 
 The official action boots a Node runtime just to launch WP Playground, which then installs Plugin Check. This action skips that: it installs a real WordPress with WP-CLI against the runner's preinstalled MySQL, activates `plugin-check`, and runs `wp plugin check`. Findings are emitted as GitHub annotations.
