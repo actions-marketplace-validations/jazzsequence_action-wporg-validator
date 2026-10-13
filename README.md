@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: jazzsequence/action-wporg-validator@0.0.0
+      - uses: jazzsequence/action-wporg-validator@1.0.0
         with:
           slug: my-plugin
 ```

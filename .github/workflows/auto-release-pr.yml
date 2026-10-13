@@ -76,7 +76,7 @@ jobs:
           done
           if [ -z "$new" ]; then
             if [ -z "$latest" ]; then
-              new="0.1.0"
+              new="1.0.0"
             else
               IFS='.' read -r major minor patch <<< "$latest"
               new="${major}.${minor}.$((patch + 1))"

@@ -10,7 +10,7 @@ Composite GitHub Action: runs WP.org Plugin Check via WP-CLI + runner MySQL (no 
 
 ## Releases
 
-- Merging a PR to `main` runs `auto-release-pr.yml`, which opens/updates a draft `Release X.Y.Z` PR that bumps `jazzsequence/action-wporg-validator@X.Y.Z` (and `actions/checkout@vN`) in `README.md`. Next version = latest tag + patch (first release: 0.1.0). Override with a PR title edit or a `/version X.Y.Z` comment (maintainers only).
+- Merging a PR to `main` runs `auto-release-pr.yml`, which opens/updates a draft `Release X.Y.Z` PR that bumps `jazzsequence/action-wporg-validator@X.Y.Z` (and `actions/checkout@vN`) in `README.md`. Next version = latest tag + patch (first release: 1.0.0). Override with a PR title edit or a `/version X.Y.Z` comment (maintainers only).
 - Merging that PR runs `create-release.yml`: tags and creates a **draft** release; publish it manually.
-- Users are told to pin an exact version, not `@v1`. The README must keep `@0.0.0` (placeholder) until the first release.
+- Users are told to pin an exact version, not `@v1`. README pre-pins `@1.0.0`, so the first release is cut manually: run Create Release via workflow_dispatch with `1.0.0` (the auto PR sees no README diff and opens nothing). After that the automation takes over.
 - Uses `GITHUB_TOKEN`, so the repo setting "Allow GitHub Actions to create and approve pull requests" must be on, and release PRs don't trigger `pull_request` workflows.
