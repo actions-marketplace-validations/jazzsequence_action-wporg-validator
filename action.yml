@@ -1,0 +1,118 @@
+name: 'WordPress.org Plugin Validator'
+description: 'Run the WordPress.org Plugin Check against a plugin using WP-CLI and a real WordPress install. No Node, no WP Playground.'
+author: 'Chris Reynolds'
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  slug:
+    description: 'Plugin slug (directory name inside wp-content/plugins). Defaults to the repository name.'
+    required: false
+    default: ''
+  build-dir:
+    description: 'Directory containing the plugin to check, relative to the workspace.'
+    required: false
+    default: '.'
+  php-version:
+    description: 'PHP version used to run WordPress and the checker.'
+    required: false
+    default: '8.2'
+  wp-version:
+    description: 'WordPress version to install (e.g. "latest", "nightly", "6.8").'
+    required: false
+    default: 'latest'
+  extra-plugins:
+    description: 'Space-separated plugin slugs to install and activate alongside Plugin Check (e.g. dependencies).'
+    required: false
+    default: ''
+  checks:
+    description: 'Comma-separated list of checks to run. Empty runs all default checks.'
+    required: false
+    default: ''
+  exclude-checks:
+    description: 'Comma-separated list of checks to skip.'
+    required: false
+    default: ''
+  categories:
+    description: 'Comma-separated check categories to run (e.g. "plugin_repo,security").'
+    required: false
+    default: ''
+  exclude-directories:
+    description: 'Comma-separated directories to exclude from checking.'
+    required: false
+    default: 'vendor,node_modules,tests,bin,.github'
+  exclude-files:
+    description: 'Comma-separated files to exclude from checking.'
+    required: false
+    default: '.gitignore,.distignore'
+  copy-excludes:
+    description: 'Newline-separated rsync exclude patterns applied when copying the plugin into WordPress. Keeps the checked tree small and fast.'
+    required: false
+    default: |
+      .git
+      node_modules
+  include-experimental:
+    description: 'Run experimental checks.'
+    required: false
+    default: 'false'
+  fail-on:
+    description: 'Fail the step on "error", on "warning" (errors and warnings), or never ("none").'
+    required: false
+    default: 'warning'
+
+outputs:
+  errors:
+    description: 'Number of ERROR findings.'
+    value: ${{ steps.check.outputs.errors }}
+  warnings:
+    description: 'Number of WARNING findings.'
+    value: ${{ steps.check.outputs.warnings }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up PHP and WP-CLI
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        extensions: mysqli
+        tools: wp-cli
+        coverage: none
+
+    # The runner image ships MySQL (root/root) but leaves it stopped. Using it
+    # means callers don't have to declare a `services:` block.
+    - name: Start MySQL
+      shell: bash
+      run: |
+        sudo systemctl start mysql.service
+        mysql -uroot -proot -e 'CREATE DATABASE IF NOT EXISTS wordpress_test;'
+
+    - name: Install WordPress and Plugin Check
+      shell: bash
+      env:
+        WP_VERSION: ${{ inputs.wp-version }}
+        EXTRA_PLUGINS: ${{ inputs.extra-plugins }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/install-wordpress.sh"
+
+    - name: Copy plugin into WordPress
+      shell: bash
+      env:
+        PLUGIN_SLUG: ${{ inputs.slug || github.event.repository.name }}
+        BUILD_DIR: ${{ inputs.build-dir }}
+        COPY_EXCLUDES: ${{ inputs.copy-excludes }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/copy-plugin.sh"
+
+    - name: Run Plugin Check
+      id: check
+      shell: bash
+      env:
+        PLUGIN_SLUG: ${{ inputs.slug || github.event.repository.name }}
+        CHECKS: ${{ inputs.checks }}
+        EXCLUDE_CHECKS: ${{ inputs.exclude-checks }}
+        CATEGORIES: ${{ inputs.categories }}
+        EXCLUDE_DIRECTORIES: ${{ inputs.exclude-directories }}
+        EXCLUDE_FILES: ${{ inputs.exclude-files }}
+        INCLUDE_EXPERIMENTAL: ${{ inputs.include-experimental }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/run-check.sh"
