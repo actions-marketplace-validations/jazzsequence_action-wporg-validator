@@ -36,8 +36,3 @@ jobs:
 ## Outputs
 
 `errors`, `warnings` — finding counts.
-
-## Notes
-
-- Uses the runner's MySQL (`root`/`root`), so no `services:` block is needed. Ubuntu runners only.
-- Derived from the workflow in [jazzs3quence-priority-manager-for-ai-connectors](https://github.com/jazzsequence/jazzs3quence-priority-manager-for-ai-connectors/blob/main/.github/workflows/ci.yml).

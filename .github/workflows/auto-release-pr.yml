@@ -1,0 +1,144 @@
+name: Auto Release PR
+
+# Keeps one draft "Release X.Y.Z" PR open against main. It bumps the pinned
+# version in README.md. Merging it triggers create-release.yml.
+#
+# Override the version by editing the PR title ("Release 1.2.0") or commenting
+# "/version 1.2.0" on the release PR.
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+  issue_comment:
+    types: [created]
+  # Not `synchronize`: pushing to the release branch would re-trigger this and reset it.
+  pull_request:
+    types: [edited]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    name: Create or update release PR
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true && !startsWith(github.event.pull_request.title, 'Release ')) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.issue.title, 'Release ') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request' && startsWith(github.event.pull_request.title, 'Release '))
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Always the base branch, never PR head code (pull_request_target is privileged).
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Find existing release PR
+        id: existing
+        run: |
+          pr=$(gh pr list --base main --state open --json number,title,headRefName \
+            --jq '[.[] | select(.title | startswith("Release "))][0] // empty')
+          {
+            echo "number=$(jq -r '.number // empty' <<< "${pr:-null}")"
+            echo "title=$(jq -r '.title // empty' <<< "${pr:-null}")"
+            echo "branch=$(jq -r '.headRefName // empty' <<< "${pr:-null}")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          EVENT_TITLE: ${{ github.event.pull_request.title || github.event.issue.title }}
+          EXISTING_TITLE: ${{ steps.existing.outputs.title }}
+        run: |
+          semver='[0-9]+\.[0-9]+\.[0-9]+'
+          latest=$(git tag --list --sort=-v:refname | grep -E "^${semver}$" | head -1 || true)
+          echo "latest=${latest:-none}" >> "$GITHUB_OUTPUT"
+
+          new=""
+          if [ "$EVENT_NAME" = "issue_comment" ]; then
+            new=$(printf '%s\n' "$COMMENT_BODY" | grep -oE "^/version ${semver}\$" | head -1 | cut -d' ' -f2 || true)
+          fi
+          # An explicit title edit, else keep whatever the open release PR already says.
+          for title in "$EVENT_TITLE" "$EXISTING_TITLE"; do
+            [ -n "$new" ] && break
+            new=$(printf '%s\n' "$title" | grep -oE "^Release ${semver}" | cut -d' ' -f2 || true)
+          done
+          if [ -z "$new" ]; then
+            if [ -z "$latest" ]; then
+              new="0.1.0"
+            else
+              IFS='.' read -r major minor patch <<< "$latest"
+              new="${major}.${minor}.$((patch + 1))"
+            fi
+          fi
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+          echo "Next version: $new (latest tag: ${latest:-none})"
+
+      - name: Close old release PR if version changed
+        if: steps.existing.outputs.number != '' && steps.existing.outputs.branch != format('release-{0}', steps.version.outputs.new)
+        env:
+          PR_NUMBER: ${{ steps.existing.outputs.number }}
+          OLD_BRANCH: ${{ steps.existing.outputs.branch }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+        run: |
+          gh pr close "$PR_NUMBER" --comment "Closing: version changed. A new PR will be opened for $NEW_VERSION."
+          git push origin --delete "$OLD_BRANCH" || true
+
+      - name: Bump versions in README and push release branch
+        id: bump
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+        run: |
+          checkout_major=$(gh release view --repo actions/checkout --json tagName -q .tagName | grep -oE '^v[0-9]+')
+
+          sed -i -E \
+            -e "s|jazzsequence/action-wporg-validator@[0-9]+\.[0-9]+\.[0-9]+|jazzsequence/action-wporg-validator@${NEW_VERSION}|g" \
+            -e "s|actions/checkout@v[0-9]+|actions/checkout@${checkout_major}|g" \
+            README.md
+
+          if git diff --quiet -- README.md; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::README already references $NEW_VERSION; no release PR needed."
+            exit 0
+          fi
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "release-${NEW_VERSION}"
+          git commit -am "docs: bump version to ${NEW_VERSION}"
+          git push --force origin "release-${NEW_VERSION}"
+
+      - name: Create or update the PR
+        if: steps.bump.outputs.has_changes == 'true'
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+          LATEST: ${{ steps.version.outputs.latest }}
+          EXISTING_BRANCH: ${{ steps.existing.outputs.branch }}
+          EXISTING_NUMBER: ${{ steps.existing.outputs.number }}
+        run: |
+          body="Bumps the pinned version in \`README.md\` from \`${LATEST}\` to \`${NEW_VERSION}\`.
+
+          **Override the version:** edit this PR's title to \`Release X.Y.Z\`, or comment \`/version X.Y.Z\`.
+
+          **Release process:** mark ready for review, merge. The Create Release workflow then tags \`${NEW_VERSION}\` and drafts the GitHub release for you to publish."
+
+          gh label create release --color 0E8A16 --description "Release PR" 2>/dev/null || true
+
+          if [ "$EXISTING_BRANCH" = "release-${NEW_VERSION}" ]; then
+            gh pr edit "$EXISTING_NUMBER" --title "Release ${NEW_VERSION}" --body "$body" --add-label release
+          else
+            gh pr create --base main --head "release-${NEW_VERSION}" \
+              --title "Release ${NEW_VERSION}" --body "$body" --label release --draft
+          fi

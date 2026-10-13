@@ -1,0 +1,72 @@
+name: Create Release
+
+# Runs when a release PR (label: release) is merged, or manually as a backup.
+# Tags the version and creates a DRAFT release; publishing it is a manual step.
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release')) ||
+      github.event_name == 'workflow_dispatch'
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+          else
+            version=$(printf '%s\n' "$PR_TITLE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Could not determine a valid X.Y.Z version (got '$version')"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify README pins this version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! grep -qF "jazzsequence/action-wporg-validator@${VERSION}" README.md; then
+            echo "::error::README.md does not reference @${VERSION}. The release PR should have bumped it."
+            exit 1
+          fi
+
+      - name: Tag and create draft release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          gh release create "$VERSION" --title "$VERSION" --generate-notes --draft
+          echo "Draft release created: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases"
