@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  # Weekly: Plugin Check's rules move (e.g. the required "Tested up to" version
+  # follows each WordPress release), so the fixture can start failing with no commit.
+  schedule:
+    - cron: '0 13 * * 1'
 
 jobs:
   shellcheck:
@@ -22,3 +27,40 @@ jobs:
           slug: validator-fixture
           build-dir: tests/validator-fixture
           fail-on: error
+
+  # Scheduled runs only: open (or update) a single tracking issue on failure,
+  # and close it once the fixture passes again.
+  report:
+    name: Report fixture status
+    needs: [shellcheck, self-test]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RESULT: ${{ needs.self-test.result == 'success' && needs.shellcheck.result == 'success' && 'success' || 'failure' }}
+    steps:
+      - name: Open, update or close the tracking issue
+        run: |
+          label="fixture-validation"
+          gh label create "$label" --color D93F0B \
+            --description "Scheduled fixture validation failed" 2>/dev/null || true
+          existing=$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty')
+
+          if [ "$RESULT" = "success" ]; then
+            [ -n "$existing" ] && gh issue close "$existing" --comment "Scheduled run passed again: $RUN_URL"
+            exit 0
+          fi
+
+          body="The scheduled fixture validation failed: $RUN_URL
+
+          Most likely cause: Plugin Check now expects a newer \`Tested up to\` value. Bump it in \`tests/validator-fixture/readme.txt\` (and check the plugin header). If the cause is something else, check the run log for new or changed Plugin Check rules."
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing: $RUN_URL"
+          else
+            gh issue create --label "$label" \
+              --title "Scheduled fixture validation is failing" --body "$body"
+          fi
