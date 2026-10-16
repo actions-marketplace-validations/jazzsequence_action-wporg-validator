@@ -37,7 +37,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       # Always the base branch, never PR head code (pull_request_target is privileged).
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: main
           fetch-depth: 0
